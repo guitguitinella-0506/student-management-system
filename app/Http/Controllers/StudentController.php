@@ -17,11 +17,11 @@ class StudentController extends Controller
     {
         $validated = $request->validate([
             'student_number' => ['required', 'string', 'max:255', 'unique:students,student_number'],
-            'first_name' => ['required', 'string', 'max:255'],
-            'last_name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'unique:students,email'],
-            'course' => ['required', 'string', 'max:255'],
-            'year_level' => ['required', 'integer', 'between:1,6'],
+            'first_name'     => ['required', 'string', 'max:255'],
+            'last_name'      => ['required', 'string', 'max:255'],
+            'email'          => ['required', 'email', 'unique:students,email'],
+            'course'         => ['required', 'string', 'max:255'],
+            'year_level'     => ['required', 'integer', 'between:1,6'],
         ]);
 
         $student = Student::create($validated);
@@ -46,12 +46,12 @@ class StudentController extends Controller
                 Rule::unique('students', 'student_number')->ignore($student->id),
             ],
             'first_name' => ['required', 'string', 'max:255'],
-            'last_name' => ['required', 'string', 'max:255'],
-            'email' => [
+            'last_name'  => ['required', 'string', 'max:255'],
+            'email'      => [
                 'required', 'email',
                 Rule::unique('students', 'email')->ignore($student->id),
             ],
-            'course' => ['required', 'string', 'max:255'],
+            'course'     => ['required', 'string', 'max:255'],
             'year_level' => ['required', 'integer', 'between:1,6'],
         ]);
 
@@ -67,7 +67,7 @@ class StudentController extends Controller
         $student->delete();
 
         return response()->json([
-            'message' => 'Student deleted successfully.'
+            'message' => 'Student deleted successfully.',
         ]);
     }
 }
