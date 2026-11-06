@@ -1,135 +1,69 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
-import api from './api';
+import { ref, watch, onMounted } from 'vue';
+import { useAuth } from './composables/useAuth';
+import { useStudents } from './composables/useStudents';
+import { useFeedback } from './composables/useFeedback';
 import LoginForm from './components/LoginForm.vue';
 import StudentForm from './components/StudentForm.vue';
 import StudentTable from './components/StudentTable.vue';
 
-const token = ref(localStorage.getItem('token'));
-const role = ref(localStorage.getItem('role'));
-const students = ref([]);
+const { role, userName, isLoggedIn, isAdmin, logout } = useAuth();
+const {
+    students, loading, saving, deletingId, formErrors,
+    loadStudents, saveStudent, deleteStudent,
+    clearFieldError, clearErrors, resetStudents,
+} = useStudents();
+const { feedback, notify } = useFeedback();
+
+// Local UI state
 const editingStudent = ref(null);
 const showForm = ref(false);
-const loading = ref(false);
-const saving = ref(false);
-const formErrors = ref({});
-const message = ref('');
-const messageType = ref('success');
-
-const isLoggedIn = computed(() => !!token.value);
-const isAdmin = computed(() => role.value === 'admin');
-
-function notify(text, type = 'success') {
-    message.value = text;
-    messageType.value = type;
-    setTimeout(() => (message.value = ''), 4000);
-}
-
-function clearSession() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('role');
-    token.value = null;
-    role.value = null;
-    students.value = [];
-    closeForm();
-}
-
-function handleError(e, fallback) {
-    const status = e.response?.status;
-    if (status === 422) {
-        formErrors.value = e.response.data.errors || {};
-        notify('Please fix the validation errors below.', 'error');
-    } else if (status === 401) {
-        clearSession();
-        notify('Session expired. Please log in again.', 'error');
-    } else if (status === 403) {
-        notify('You do not have permission to do that.', 'error');
-    } else if (status === 404) {
-        notify('Student not found.', 'error');
-    } else {
-        notify(fallback, 'error');
-    }
-}
-
-async function loadStudents() {
-    loading.value = true;
-    try {
-        const { data } = await api.get('/students');
-        students.value = data;
-    } catch (e) {
-        handleError(e, 'Failed to load students.');
-    } finally {
-        loading.value = false;
-    }
-}
-
-function onLoggedIn({ token: newToken, role: newRole }) {
-    localStorage.setItem('token', newToken);
-    localStorage.setItem('role', newRole);
-    token.value = newToken;
-    role.value = newRole;
-    notify('Logged in successfully.');
-    loadStudents();
-}
-
-async function logout() {
-    try {
-        await api.post('/logout');
-    } catch (e) {
-        // token may already be invalid, just clear it locally
-    }
-    clearSession();
-    notify('Logged out successfully.');
-}
 
 function openAdd() {
     editingStudent.value = null;
-    formErrors.value = {};
+    clearErrors();
     showForm.value = true;
 }
 
 function openEdit(student) {
     editingStudent.value = student;
-    formErrors.value = {};
+    clearErrors();
     showForm.value = true;
 }
 
 function closeForm() {
     showForm.value = false;
     editingStudent.value = null;
-    formErrors.value = {};
+    clearErrors();
 }
 
-async function saveStudent(payload) {
-    saving.value = true;
-    formErrors.value = {};
-    try {
-        if (editingStudent.value) {
-            await api.put(`/students/${editingStudent.value.id}`, payload);
-            notify('Student updated successfully.');
-        } else {
-            await api.post('/students', payload);
-            notify('Student added successfully.');
-        }
-        closeForm();
-        await loadStudents();
-    } catch (e) {
-        handleError(e, 'Could not save the student.');
-    } finally {
-        saving.value = false;
-    }
+async function handleSave(payload) {
+    const saved = await saveStudent(payload, editingStudent.value?.id);
+    if (saved) closeForm();
 }
 
-async function deleteStudent(student) {
+async function handleDelete(student) {
     if (!confirm(`Delete ${student.first_name} ${student.last_name}?`)) return;
-    try {
-        await api.delete(`/students/${student.id}`);
-        notify('Student deleted successfully.');
-        await loadStudents();
-    } catch (e) {
-        handleError(e, 'Could not delete the student.');
-    }
+    await deleteStudent(student);
 }
+
+async function handleLoggedIn() {
+    notify('Logged in successfully.');
+    await loadStudents();
+}
+
+async function handleLogout() {
+    await logout();
+    notify('Logged out successfully.');
+}
+
+// React to state changes: when the session ends, clear everything
+watch(isLoggedIn, (loggedIn) => {
+    if (!loggedIn) {
+        resetStudents();
+        closeForm();
+    }
+});
 
 onMounted(() => {
     if (isLoggedIn.value) loadStudents();
@@ -140,16 +74,19 @@ onMounted(() => {
     <div class="container">
         <h1>Student Management</h1>
 
-        <div v-if="message" :class="['alert', messageType]">{{ message }}</div>
+        <div v-if="feedback.message" :class="['alert', feedback.type]">{{ feedback.message }}</div>
 
-        <LoginForm v-if="!isLoggedIn" @logged-in="onLoggedIn" />
+        <LoginForm v-if="!isLoggedIn" @logged-in="handleLoggedIn" />
 
         <template v-else>
             <div class="header">
-                <span>Logged in as <strong class="badge">{{ role }}</strong></span>
+                <span>
+                    {{ userName }}
+                    <strong class="badge">{{ role }}</strong>
+                </span>
                 <div>
                     <button v-if="isAdmin" class="btn btn-primary" @click="openAdd">+ Add Student</button>
-                    <button class="btn btn-secondary" @click="logout">Logout</button>
+                    <button class="btn btn-secondary" @click="handleLogout">Logout</button>
                 </div>
             </div>
 
@@ -158,17 +95,33 @@ onMounted(() => {
                 :student="editingStudent"
                 :errors="formErrors"
                 :saving="saving"
-                @save="saveStudent"
+                @save="handleSave"
                 @cancel="closeForm"
+                @clear-error="clearFieldError"
             />
 
             <StudentTable
                 :students="students"
                 :is-admin="isAdmin"
                 :loading="loading"
+                :deleting-id="deletingId"
                 @edit="openEdit"
-                @delete="deleteStudent"
+                @delete="handleDelete"
             />
+
+            <div class="card state-panel">
+                <h2>Vue State (live)</h2>
+                <ul>
+                    <li>isLoggedIn: <strong>{{ isLoggedIn }}</strong></li>
+                    <li>role: <strong>{{ role }}</strong></li>
+                    <li>isAdmin: <strong>{{ isAdmin }}</strong></li>
+                    <li>students loaded: <strong>{{ students.length }}</strong></li>
+                    <li>loading: <strong>{{ loading }}</strong></li>
+                    <li>saving: <strong>{{ saving }}</strong></li>
+                    <li>form open: <strong>{{ showForm }}</strong></li>
+                    <li>editing id: <strong>{{ editingStudent?.id ?? 'none' }}</strong></li>
+                </ul>
+            </div>
         </template>
     </div>
 </template>

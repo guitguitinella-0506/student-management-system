@@ -7,7 +7,7 @@ const props = defineProps({
     saving: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['save', 'cancel']);
+const emit = defineEmits(['save', 'cancel', 'clear-error']);
 
 const fields = [
     { key: 'student_number', label: 'Student Number', type: 'text' },
@@ -27,10 +27,11 @@ const emptyForm = () => ({
     year_level: '',
 });
 
+
 const form = reactive(emptyForm());
 const isEditing = computed(() => !!props.student);
 
-// Fill the form when editing, clear it when adding
+
 watch(
     () => props.student,
     (student) => {
@@ -64,6 +65,7 @@ function submit() {
                 v-model="form[field.key]"
                 :type="field.type"
                 :class="{ invalid: errors[field.key] }"
+                @input="emit('clear-error', field.key)"
             />
             <small v-if="errors[field.key]" class="error">{{ errors[field.key][0] }}</small>
         </div>
